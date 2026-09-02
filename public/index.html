@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visa Coach — B1/B2 Interview Practice</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>🛂 Visa Coach</h1>
+      <p class="tagline">Practice your U.S. B1/B2 visa interview with a realistic AI consular officer — then get scored like a real applicant.</p>
+    </header>
+
+    <section class="controls">
+      <button id="btn-start">Start Interview</button>
+      <button id="btn-end" disabled>End Interview</button>
+      <div id="status" class="status">Press Start and allow microphone access.</div>
+    </section>
+
+    <section id="live-panel" class="panel">
+      <h2>Interview window</h2>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+    </section>
+
+    <section id="report" class="panel report"></section>
+
+    <footer>
+      <p>Built on <a href="https://www.assemblyai.com/" rel="noopener">AssemblyAI Voice Agent API</a> (streaming STT · turn detection · barge-in) + LLM Gateway scoring. Practice tool only — not legal advice.</p>
+    </footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

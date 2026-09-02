@@ -1,0 +1,11 @@
+{
+  "name": "visa-coach",
+  "version": "0.1.0",
+  "description": "Voice-based B1/B2 visa interview practice agent built on AssemblyAI's Voice Agent API",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "engines": { "node": ">=20" }
+}
