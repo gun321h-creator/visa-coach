@@ -71,26 +71,29 @@ if (token) {
   console.log('[2] skipped (no token)');
 }
 
-// --- 3. LLM Gateway report ---
-const gr = await fetch('https://llm-gateway.assemblyai.com/v1/chat/completions', {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    model: process.env.REPORT_MODEL || 'claude-sonnet-5',
-    messages: [
-      { role: 'user', content: `Reply with ONLY this JSON: {"ok": true}` },
-    ],
-    max_tokens: 20,
-  }),
-});
-console.log(`[3] LLM gateway: HTTP ${gr.status}`);
-if (gr.ok) {
-  const data = await gr.json();
-  console.log(`[3] model used: ${data.model || 'unknown'} | content: ${(data.choices?.[0]?.message?.content || '').slice(0, 60)}`);
-} else {
-  console.log(`[3] body: ${(await gr.text()).slice(0, 300)}`);
-  failures++;
+// --- 3. LLM Gateway report (same fallback chain as api/report.js) ---
+const preferred = process.env.REPORT_MODEL || 'claude-sonnet-5';
+const chain = preferred === 'qwen3.5-4b-32k-fast' ? [preferred] : [preferred, 'qwen3.5-4b-32k-fast'];
+let gatewayOk = false;
+for (const model of chain) {
+  const gr = await fetch('https://llm-gateway.assemblyai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: 'Reply with ONLY this JSON: {"ok": true}' }],
+      max_tokens: 20,
+    }),
+  });
+  if (gr.ok) {
+    const data = await gr.json();
+    console.log(`[3] LLM gateway OK via ${model} | content: ${(data.choices?.[0]?.message?.content || '').slice(0, 40)}`);
+    gatewayOk = true;
+    break;
+  }
+  console.log(`[3] ${model} -> HTTP ${gr.status} (${(await gr.text()).slice(0, 120)}) — trying fallback`);
 }
+if (!gatewayOk) failures++;
 
 console.log(failures === 0 ? 'SMOKE: ALL PASS' : `SMOKE: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

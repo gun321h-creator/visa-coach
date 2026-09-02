@@ -3,11 +3,12 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tokenHandler from './api/token.js';
 import reportHandler from './api/report.js';
 
 const PORT = process.env.PORT || 3000;
-const PUBLIC_DIR = new URL('./public/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

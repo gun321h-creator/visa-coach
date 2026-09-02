@@ -19,6 +19,8 @@ let workletNode = null;
 let playbackTime = 0;
 let scheduledSources = [];
 let partialEl = null;
+let sessionLive = false;   // session.ready received, not yet ended
+let endingByUser = false;  // deliberate hang-up in progress
 const transcript = []; // {role: 'user'|'agent', text}
 
 function setStatus(text, cls = '') {
@@ -85,9 +87,30 @@ function stopPlayback() {
   playbackTime = 0;
 }
 
+// Tear down mic, audio context, and socket. Safe to call from any state.
+async function teardown() {
+  sessionLive = false;
+  stopPlayback();
+  if (workletNode) { try { workletNode.disconnect(); } catch (e) { /* ignore */ } workletNode = null; }
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+  if (ws) { try { ws.close(); } catch (e) { /* ignore */ } ws = null; }
+  if (audioCtx) { try { await audioCtx.close(); } catch (e) { /* ignore */ } audioCtx = null; }
+}
+
+function resetSessionUI() {
+  transcript.length = 0;
+  clearPartial();
+  els.transcript.replaceChildren();
+  els.report.replaceChildren();
+  els.report.classList.remove('active');
+}
+
 // ---- session ----
 async function start() {
   els.start.disabled = true;
+  endingByUser = false;
+  resetSessionUI();
+
   setStatus('Requesting microphone…');
   try {
     micStream = await navigator.mediaDevices.getUserMedia({
@@ -100,27 +123,28 @@ async function start() {
   }
 
   setStatus('Connecting…');
-  const tokenRes = await fetch('/api/token');
-  if (!tokenRes.ok) {
-    setStatus('Could not get session token', 'err');
+  try {
+    const tokenRes = await fetch('/api/token');
+    if (!tokenRes.ok) throw new Error(`token endpoint returned ${tokenRes.status}`);
+    const tokenData = await tokenRes.json();
+    const token = tokenData.token;
+    if (!token) throw new Error('token response missing token field');
+
+    audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    await audioCtx.audioWorklet.addModule('./worklet.js');
+
+    ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+    wireSocket(ws);
+  } catch (e) {
+    await teardown();
+    setStatus(`Could not start session: ${e.message}`, 'err');
     els.start.disabled = false;
-    return;
   }
-  const tokenData = await tokenRes.json();
-  const token = tokenData.token || tokenData.temp_token || tokenData.value;
-  if (!token) {
-    setStatus('Token response missing token field', 'err');
-    els.start.disabled = false;
-    return;
-  }
+}
 
-  audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-  await audioCtx.audioWorklet.addModule('./worklet.js');
-
-  ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({
+function wireSocket(sock) {
+  sock.onopen = () => {
+    sock.send(JSON.stringify({
       type: 'session.update',
       session: {
         system_prompt: OFFICER_PROMPT,
@@ -138,15 +162,23 @@ async function start() {
     }));
   };
 
-  ws.onmessage = (ev) => {
+  sock.onmessage = async (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
     switch (msg.type) {
       case 'session.ready':
+        try {
+          startMic();
+        } catch (e) {
+          await teardown();
+          setStatus('Your browser could not capture 24kHz audio — please use Chrome or Edge.', 'err');
+          els.start.disabled = false;
+          return;
+        }
+        sessionLive = true;
         setStatus('Interview in progress — speak naturally', 'live');
         els.end.disabled = false;
         els.live.classList.add('active');
-        startMic();
         break;
       case 'transcript.user.delta':
         showPartial(msg.text || msg.delta || '');
@@ -159,7 +191,7 @@ async function start() {
         if (msg.text) addLine('agent', msg.text);
         break;
       case 'reply.audio':
-        if (msg.data) playChunk(msg.data);
+        if (msg.data && audioCtx) playChunk(msg.data);
         break;
       case 'reply.done':
         if (msg.status === 'interrupted') stopPlayback();
@@ -170,12 +202,15 @@ async function start() {
     }
   };
 
-  ws.onclose = () => {
-    if (els.status.textContent.startsWith('Interview in progress')) {
-      setStatus('Connection closed', 'err');
+  sock.onclose = () => {
+    if (sessionLive && !endingByUser) {
+      sessionLive = false;
+      setStatus('Connection lost — press End Interview to score what was recorded', 'err');
     }
   };
-  ws.onerror = () => setStatus('WebSocket error', 'err');
+  sock.onerror = () => {
+    if (!sessionLive && !endingByUser) setStatus('WebSocket error', 'err');
+  };
 }
 
 function startMic() {
@@ -197,10 +232,8 @@ function startMic() {
 
 async function end() {
   els.end.disabled = true;
-  stopPlayback();
-  try { if (ws) ws.close(); } catch (e) { /* ignore */ }
-  if (micStream) micStream.getTracks().forEach((t) => t.stop());
-  try { if (audioCtx) await audioCtx.close(); } catch (e) { /* ignore */ }
+  endingByUser = true;
+  await teardown();
 
   if (transcript.filter((t) => t.role === 'user').length === 0) {
     setStatus('No answers recorded — nothing to score', 'err');
@@ -209,17 +242,20 @@ async function end() {
   }
 
   setStatus('Scoring your interview…');
-  const r = await fetch('/api/report', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript }),
-  });
-  if (!r.ok) {
-    setStatus('Report generation failed', 'err');
-    return;
+  try {
+    const r = await fetch('/api/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript }),
+    });
+    if (!r.ok) throw new Error(`report endpoint returned ${r.status}`);
+    renderReport(await r.json());
+    setStatus('Interview complete — press Start to practice again', 'done');
+  } catch (e) {
+    setStatus(`Report generation failed: ${e.message}`, 'err');
+  } finally {
+    els.start.disabled = false;
   }
-  renderReport(await r.json());
-  setStatus('Interview complete', 'done');
 }
 
 function renderReport(rep) {

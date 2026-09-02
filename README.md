@@ -36,12 +36,16 @@ node --env-file=.env server.js
 # open http://localhost:3000, press Start Interview
 ```
 
-Requires Node ≥ 20 and a browser with mic access (Chrome recommended).
+Requires Node ≥ 22 (global `fetch` + `WebSocket`) and a browser with mic access (Chrome recommended).
 
 ## Deploy
 
 The repo is Vercel-ready: static `public/` + serverless `api/` functions.
 Set `ASSEMBLYAI_API_KEY` in the Vercel project env and deploy.
+
+The API routes ship with same-origin checks, a best-effort per-IP rate limit,
+and transcript size caps (`lib/guard.js`). For a public deployment, also set a
+spend cap on the AssemblyAI account — that is the real backstop.
 
 ## Smoke test (no mic needed)
 
