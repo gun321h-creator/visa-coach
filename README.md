@@ -2,7 +2,7 @@
 
 **File a short DS-160. Then face a consular officer who already has it on screen — by voice, in real time — and watch him catch every place your answers stop matching your own form.**
 
-<!-- DEMO_URL -->
+<!-- DEMO_URL --> ### ▶︎ **[Try it live — officer-parker.vercel.app](https://officer-parker.vercel.app)**
 <!-- VIDEO_URL -->
 
 [![Hackathon](https://img.shields.io/badge/AssemblyAI-Voice%20Agent%20Hackathon-3b82f6)](https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon)
@@ -10,7 +10,8 @@
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](./package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-**Live demo:** _(paste URL above the badges once deployed)_ · **Demo video:** _(same)_
+**Live demo:** <https://officer-parker.vercel.app> · **Demo video:** _(link added on submission)_
+No microphone? The live page has a **sample replay** that runs the whole interview and report with no mic, no socket and no API call.
 Built for the [AssemblyAI Voice Agent Hackathon](https://lablab.ai/ai-hackathons/assemblyai-voice-agent-hackathon) (lablab.ai, Sep 2026).
 
 ---
