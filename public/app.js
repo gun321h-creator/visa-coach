@@ -779,6 +779,10 @@ async function end() {
     if (epoch !== navEpoch) return;
     endScoring();
     setStatus(`Report generation failed: ${e.message}`, 'err');
+    // The transcript is still in memory, and a 503 tells the user to wait and
+    // press End interview again — so the button that does that has to come
+    // back. Without this the only affordance left restarts and discards it.
+    els.end.disabled = false;
     els.reportFoot.hidden = false;
   } finally {
     els.start.disabled = false;

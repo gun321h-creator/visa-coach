@@ -102,14 +102,19 @@ const FORM_FIELD_META = [
 const GATEWAY_RETRY_MS = 1500;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Any long unbroken token is treated as a secret. A false positive costs a word
+// of debuggability; a false negative writes an API key into a retained log.
+const CREDENTIAL_SHAPED = /[A-Za-z0-9_-]{16,}/g;
+
 /**
  * A loggable summary of an upstream error body.
  *
  * Function logs are retained, and a gateway auth failure commonly echoes the
- * credential that was presented — so the raw body must never be written down,
- * even server-side. Keep the two fields that are actually useful for debugging
- * and describe the rest by shape only.
+ * credential that was presented — "Invalid API key: <the key>" — which is
+ * exactly the field worth logging. So keep the two useful fields, redact
+ * anything credential-shaped inside them, and describe the rest by shape only.
  */
+
 function upstreamSummary(body) {
   const s = String(body ?? '');
   let message = '';
@@ -117,8 +122,14 @@ function upstreamSummary(body) {
   try {
     const j = JSON.parse(s);
     if (j && typeof j === 'object') {
-      message = String(j.message ?? j.error ?? '').slice(0, 120);
-      code = String(j.code ?? '').slice(0, 20);
+      // OpenAI-compatible gateways nest it as {error: {message}}; others put it
+      // flat. String(j.error) on the nested shape yields "[object Object]".
+      const raw =
+        (j.error && typeof j.error === 'object' ? j.error.message : null) ??
+        j.message ??
+        (typeof j.error === 'string' ? j.error : '');
+      message = String(raw ?? '').slice(0, 120).replace(CREDENTIAL_SHAPED, '<redacted>');
+      code = String(j.code ?? j.error?.code ?? '').slice(0, 20).replace(CREDENTIAL_SHAPED, '<redacted>');
     }
   } catch {
     /* not JSON — describe by shape only */
@@ -446,6 +457,26 @@ function topicMatches(fieldKey, said, transcript) {
   return words(context).some((w) => topic.has(w));
 }
 
+// A quote is traceable if almost all of its meaningful words came out of the
+// applicant's own mouth. Checking a prefix is not enough: a model that starts
+// with a real sentence and appends "and I intend to stay in the United States
+// permanently" would pass, and the panel would then attribute immigrant intent
+// to someone who never said it. Coverage instead of exact containment so that
+// ordinary quoting behaviour survives — an expanded contraction ("employer's" →
+// "employer is") or an elision across a pause should not be treated as a
+// fabrication.
+const QUOTE_MIN_TOKEN_LEN = 3;
+const QUOTE_COVERAGE = 0.9;
+const stem = (w) => w.replace(/'s$/, '').replace(/'/g, '');
+
+function quoteIsTraceable(said, applicantWords) {
+  if (applicantWords.size === 0) return true; // nothing to check against
+  const toks = words(said).map(stem).filter((w) => w.length >= QUOTE_MIN_TOKEN_LEN);
+  if (toks.length === 0) return true;
+  const hits = toks.filter((w) => applicantWords.has(w)).length;
+  return hits / toks.length >= QUOTE_COVERAGE;
+}
+
 function normalizeContradictions(raw, cleanForm, hasForm, transcript) {
   if (!hasForm || !Array.isArray(raw)) return [];
 
@@ -453,20 +484,29 @@ function normalizeContradictions(raw, cleanForm, hasForm, transcript) {
   // applicant will actually check, so every quote in it has to be traceable
   // to words the applicant really said. The prompt forbids invented quotes;
   // this is the backstop for when a small model does it anyway.
-  const applicantSaid = norm(
+  const applicantWords = new Set(
     (Array.isArray(transcript) ? transcript : [])
       .filter((t) => t && typeof t === 'object' && t.role === 'user')
-      .map((t) => String(t.text ?? ''))
-      .join(' '),
+      .flatMap((t) => words(String(t.text ?? '')))
+      .map(stem),
   );
 
   const out = [];
   const seen = new Set();
   for (const c of raw.slice(0, MAX_CONTRADICTIONS)) {
     if (!c || typeof c !== 'object' || Array.isArray(c)) continue;
+
+    // The field must resolve to one of the eight known keys. Without that,
+    // every guard below is unenforceable — the topic vocabulary is keyed on it,
+    // dedupe collapses to whatever prose the model invented, and "filed" falls
+    // back to the model's own text, so the card can quote a form value the user
+    // never entered. A 4B writing "return date" instead of "return_plan" is not
+    // exotic; it is the likely output.
     const key = matchFormKey(c.field);
+    if (!key) continue;
+
     const said = safeText(c.said, 400);
-    const filed = key && cleanForm[key] ? cleanForm[key] : safeText(c.filed, 400);
+    const filed = cleanForm[key] ? cleanForm[key] : safeText(c.filed, 400);
     // No quoted evidence on either side = no contradiction we are willing to show.
     if (!said || !filed) continue;
 
@@ -474,25 +514,19 @@ function normalizeContradictions(raw, cleanForm, hasForm, transcript) {
     // field twice with two different quotes is padding the list, not finding a
     // second divergence — and the count above the report is derived from this
     // array, so the padding would inflate the headline too.
-    const dedupe = key || norm(c.field);
-    if (!dedupe || seen.has(dedupe)) continue;
+    if (seen.has(key)) continue;
 
-    // Quote provenance. Compare on the normalised forms so punctuation,
-    // casing and the safeText ellipsis do not matter. Very short quotes are
-    // exempt: they collide by accident rather than prove anything.
-    const saidNorm = norm(said);
-    if (saidNorm.length >= 12 && applicantSaid && !applicantSaid.includes(saidNorm.slice(0, 60))) {
-      continue;
-    }
+    // Quote provenance, over the whole quote rather than a prefix.
+    if (!quoteIsTraceable(said, applicantWords)) continue;
 
     // Subject match. The quote has to be about the thing that was filed —
     // otherwise the applicant merely never mentioned it, and omission is not
-    // divergence. Only enforceable for a recognised form key.
-    if (key && !topicMatches(key, said, transcript)) continue;
+    // divergence.
+    if (!topicMatches(key, said, transcript)) continue;
 
-    seen.add(dedupe);
+    seen.add(key);
     out.push({
-      field: key || safeText(c.field, 60) || 'form',
+      field: key,
       filed,
       said,
       why_it_matters: safeText(c.why_it_matters, 400),
@@ -580,6 +614,7 @@ export default async function handler(req, res) {
     let lastBody = '';
     let usedModel = null;
     let jsonModeOk = false;
+    let backedOff = false;
 
     for (const model of models) {
       const base = {
@@ -592,26 +627,33 @@ export default async function handler(req, res) {
         temperature: 0.2,
       };
 
-      r = await post({ ...base, response_format: { type: 'json_object' } });
+      // `attempt` is the body that is actually in flight, so the 429 retry
+      // below re-sends what failed rather than reinstating a response_format
+      // this model has already rejected.
+      let attempt = { ...base, response_format: { type: 'json_object' } };
+      r = await post(attempt);
       if (r.ok) { usedModel = model; jsonModeOk = true; break; }
       lastBody = await r.text();
 
       // Some models reject response_format outright — retry the SAME model once
       // without it before spending the fallback model.
       if (looksLikeResponseFormatRejection(r.status, lastBody)) {
-        r = await post(base);
+        attempt = base;
+        r = await post(attempt);
         if (r.ok) { usedModel = model; break; }
         lastBody = await r.text();
       }
 
       // Upstream rate limit. The free tier throttles the gateway, and it bites
       // exactly when someone is filming several takes in a row — i.e. at the
-      // one moment the report matters most. One short backoff is worth the
-      // added latency; a second would not be.
-      if (r.status === 429) {
+      // one moment the report matters most. One short backoff per REQUEST, not
+      // per model: sleeping once for every model in the chain would double the
+      // calls we send to an endpoint that just asked us to slow down.
+      if (r.status === 429 && !backedOff) {
+        backedOff = true;
         await sleep(GATEWAY_RETRY_MS);
-        r = await post({ ...base, response_format: { type: 'json_object' } });
-        if (r.ok) { usedModel = model; jsonModeOk = true; break; }
+        r = await post(attempt);
+        if (r.ok) { usedModel = model; jsonModeOk = !!attempt.response_format; break; }
         lastBody = await r.text();
       }
       // Any other failure of the preferred model is worth one shot on the
@@ -701,7 +743,14 @@ export default async function handler(req, res) {
     // contradiction cards; counting both double-counts the same problem.
     // Only real scores count — `null <= 3` is true in JS, so an omitted
     // dimension would otherwise manufacture a refusal reason out of nothing.
-    const failingDims = scoredDims.filter((d) => d !== FORM_DIMENSION && scores[d] <= 3).length;
+    // form_consistency is normally excluded because the contradiction cards
+    // already represent it — counting both double-counts one problem. But when
+    // every candidate contradiction was dropped by the guards, those cards do
+    // not exist, and excluding the dimension too would print "0 likely refusal
+    // reasons found" directly above a red "Form consistency 1/10" bar.
+    const failingDims = scoredDims.filter(
+      (d) => (d !== FORM_DIMENSION || contradictions.length === 0) && scores[d] <= 3,
+    ).length;
     const refusalReasons = Math.max(0, Math.min(10, contradictions.length + failingDims));
 
     const fillers = countFillers(transcript);
