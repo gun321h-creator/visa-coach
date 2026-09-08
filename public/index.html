@@ -3,33 +3,283 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visa Coach — B1/B2 Interview Practice</title>
+  <meta name="color-scheme" content="light" />
+  <meta name="description" content="Officer Parker — file a short DS-160, then face an AI consular officer who already has it on screen. He cross-examines the form by voice and names every contradiction out loud." />
+  <title>Officer Parker — B1/B2 Interview Practice</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230e1f33'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23d9c9a3' stroke-width='1.6'/%3E%3Cpath d='M16 8.4l1.7 5.1h5.4l-4.4 3.2 1.7 5.1L16 18.6l-4.4 3.2 1.7-5.1-4.4-3.2h5.4z' fill='%23d9c9a3'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+
+  <!-- ─── masthead (always visible, no JS, no permissions) ─────────────── -->
+  <div class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="./">
+        <svg class="seal" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+          <circle cx="22" cy="22" r="20.5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+          <circle cx="22" cy="22" r="16.5" fill="none" stroke="currentColor" stroke-width="2.2"/>
+          <path d="M22 10.5 L23.55 15.1 L28.4 15.1 L24.5 18 L26 22.6 L22 19.8 L18 22.6 L19.5 18 L15.6 15.1 L20.45 15.1 Z" fill="currentColor" opacity=".9"/>
+          <path d="M13.5 27.5 h17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M15.5 31 h13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+        </svg>
+        <span class="brand-text">
+          <strong>Officer Parker</strong>
+          <span class="brand-sub">B1/B2 window rehearsal</span>
+        </span>
+      </a>
+      <p class="masthead-note">Practice tool &middot; not legal advice</p>
+    </div>
+  </div>
+
   <main>
-    <header>
-      <h1>🛂 Visa Coach</h1>
-      <p class="tagline">Practice your U.S. B1/B2 visa interview with a realistic AI consular officer — then get scored like a real applicant.</p>
-    </header>
 
-    <section class="controls">
-      <button id="btn-start">Start Interview</button>
-      <button id="btn-end" disabled>End Interview</button>
-      <div id="status" class="status">Press Start and allow microphone access.</div>
+    <!-- ─── LANDING ─────────────────────────────────────────────────────── -->
+    <section id="view-landing" class="view">
+
+      <div class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">AI consular officer &middot; by voice</p>
+          <h1>Officer Parker already has your form.</h1>
+          <p class="lede">
+            You file a short DS-160 before the window opens. Then he interviews you out loud with
+            that form on his screen &mdash; and the moment what you <em>say</em> stops matching what
+            you <em>filed</em>, he names it to your face. The report opens with every contradiction,
+            side by side.
+          </p>
+
+          <div class="controls">
+            <button id="btn-start" class="btn btn-primary" type="button">Start interview</button>
+            <button id="btn-demo" class="btn btn-ghost" type="button">Watch a sample session</button>
+          </div>
+          <div id="status" class="status js-status">Microphone required for a live interview. The sample replay needs nothing.</div>
+
+          <ul class="hero-meta">
+            <li>About 2 minutes</li>
+            <li>3&ndash;5 questions, like the real window</li>
+            <li>Nothing is stored</li>
+          </ul>
+        </div>
+
+        <!-- static illustrative window card: pure CSS, no data, no network -->
+        <aside class="hero-card" aria-hidden="true">
+          <div class="hero-card-head">
+            <span class="wc-dot"></span>
+            <span class="wc-title">Window 4 &middot; Non-immigrant visas</span>
+          </div>
+          <div class="hero-card-filed">
+            <span class="filed-k">On file &middot; who is paying</span>
+            <span class="filed-v">&ldquo;My sister in Chicago is paying.&rdquo;</span>
+          </div>
+          <div class="hero-card-body">
+            <div class="mini-line agent"><span class="who">Officer</span>Who is paying for this trip?</div>
+            <div class="mini-line user"><span class="who">You</span>My employer is covering it, it&rsquo;s partly a training visit.</div>
+            <div class="mini-line agent probe"><span class="who">Officer</span>Your form says your sister. You just said your employer. Which is it?</div>
+            <div class="mini-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="hero-card-foot">
+            <span class="tag tag-live">Contradiction caught</span>
+            <span class="mono">00:47</span>
+          </div>
+        </aside>
+      </div>
+
+      <!-- how it works -->
+      <section class="band">
+        <h2 class="band-title">How it works</h2>
+        <ol class="steps">
+          <li>
+            <span class="step-n">01</span>
+            <h3>File the form</h3>
+            <p>A short DS-160: purpose, occupation, who pays, relatives in the U.S., prior travel, return plan, ties. Eight fields, about a minute. You can skip it &mdash; the interview still runs, it just has nothing to check you against.</p>
+          </li>
+          <li>
+            <span class="step-n">02</span>
+            <h3>He cross-examines it</h3>
+            <p>Officer Parker is not learning about you. Every question he asks already has an answer on his screen, and he is checking whether your mouth agrees with your paperwork. Diverge, and he interrupts and quotes both sides back at you.</p>
+          </li>
+          <li>
+            <span class="step-n">03</span>
+            <h3>See every gap</h3>
+            <p>The report leads with what you filed beside what you said, and why an officer would refuse over the difference. Then the scorecard, the lines that cost you, and the fixes.</p>
+          </li>
+        </ol>
+      </section>
+
+      <!-- what the officer asks about — rendered from FORM_FIELDS so it can never drift -->
+      <section class="band">
+        <h2 class="band-title">What is on his screen</h2>
+        <p class="band-sub">Every field you file is a question he can already check the answer to. This list is generated from the form itself.</p>
+        <ul id="topics" class="topics"></ul>
+      </section>
+
+      <!-- report preview -->
+      <section class="band">
+        <h2 class="band-title">What you get at the end</h2>
+        <p class="band-sub">Not a grade. A list of the things a real officer could refuse you over &mdash; starting with the ones your own form contradicts.</p>
+
+        <div class="preview">
+          <div class="preview-lead">
+            <span class="preview-n">2</span>
+            <span class="preview-k">likely refusal reasons found</span>
+          </div>
+          <p class="preview-verdict">&ldquo;Likely refusal. You contradicted your own form twice, and the second time you could not explain it.&rdquo;</p>
+
+          <div class="contra contra-static">
+            <p class="contra-field">Who is paying for this trip?</p>
+            <div class="contra-cols">
+              <div class="contra-col filed"><span class="ck">On your form</span><p>My sister in Chicago is paying for the trip</p></div>
+              <div class="contra-col said"><span class="ck">At the window</span><p>&ldquo;My company is, uh, my employer is covering it.&rdquo;</p></div>
+            </div>
+            <p class="contra-why"><span class="why-k">Why it matters</span>An undisclosed sponsor is a misrepresentation risk, and the officer now doubts the rest of the form.</p>
+          </div>
+
+          <div class="preview-bars">
+            <div class="dim"><span class="dim-label">Form consistency</span><div class="bar"><div class="fill sr" style="width:30%"></div></div><b class="dim-val">3</b></div>
+            <div class="dim"><span class="dim-label">Purpose &amp; funding</span><div class="bar"><div class="fill sr" style="width:40%"></div></div><b class="dim-val">4</b></div>
+            <div class="dim"><span class="dim-label">Ties to home country</span><div class="bar"><div class="fill sg" style="width:70%"></div></div><b class="dim-val">7</b></div>
+          </div>
+
+          <div class="preview-cta">
+            <button class="btn btn-ghost btn-sm" type="button" data-demo-trigger>See the full sample report</button>
+          </div>
+        </div>
+      </section>
     </section>
 
-    <section id="live-panel" class="panel">
-      <h2>Interview window</h2>
-      <div id="transcript" class="transcript" aria-live="polite"></div>
+    <!-- ─── INTAKE: the short-form DS-160 ───────────────────────────────── -->
+    <section id="view-intake" class="view" hidden>
+      <div class="intake">
+
+        <div class="gov-head">
+          <div class="gov-head-l">
+            <p class="gov-doc">DS-160 &mdash; SHORT FORM</p>
+            <h1 class="gov-title">Nonimmigrant Visa Application &mdash; Applicant Statement</h1>
+          </div>
+          <p class="gov-omb">Practice copy &middot; not a government form<br />No data leaves this page</p>
+        </div>
+
+        <p class="gov-intro">
+          Answer as you would on the real thing. Officer Parker gets this verbatim before he calls
+          you forward, and he will test every line of it out loud.
+        </p>
+
+        <div id="intake-sample-note" class="gov-note" hidden></div>
+
+        <form id="ds160" autocomplete="off" novalidate>
+          <fieldset class="gov-fields">
+            <legend class="gov-legend">Part I &mdash; Applicant</legend>
+            <div id="form-fields"></div>
+          </fieldset>
+
+          <fieldset class="gov-fields">
+            <legend class="gov-legend">Part II &mdash; Interview length</legend>
+            <div id="mode-choices" class="modes"></div>
+          </fieldset>
+        </form>
+
+        <div class="intake-foot">
+          <button id="btn-file" class="btn btn-primary" type="button">File form &amp; open the window</button>
+          <button id="btn-skip-form" class="btn btn-ghost" type="button">Skip the form</button>
+          <button id="btn-intake-back" class="btn btn-quiet" type="button">Back</button>
+        </div>
+        <p class="gov-fine">
+          Practice data only. Nothing is stored, sent to any government system, or kept after you
+          close the tab. Do not enter a real passport or case number.
+        </p>
+      </div>
     </section>
 
-    <section id="report" class="panel report"></section>
+    <!-- ─── SESSION ─────────────────────────────────────────────────────── -->
+    <section id="view-session" class="view" hidden>
 
-    <footer>
-      <p>Built on <a href="https://www.assemblyai.com/" rel="noopener">AssemblyAI Voice Agent API</a> (streaming STT · turn detection · barge-in) + LLM Gateway scoring. Practice tool only — not legal advice.</p>
-    </footer>
+      <div class="console">
+        <div class="console-bar">
+          <div class="console-left">
+            <span id="state-pill" class="pill" data-state="idle">
+              <span class="pill-dot"></span><span id="state-label" class="pill-label">Standing by</span>
+            </span>
+            <span id="mode-chip" class="badge-mode" hidden></span>
+            <span id="sample-badge" class="badge-sample" hidden>Sample replay</span>
+          </div>
+          <div class="console-right">
+            <span id="form-chip" class="badge-form" hidden>Form on screen</span>
+            <span class="meter" title="Questions asked">
+              <span class="meter-k">Q</span><b id="q-counter" class="mono">0</b><span id="q-target" class="meter-of"></span>
+            </span>
+            <span class="meter" title="Elapsed">
+              <span class="meter-k">Time</span><b id="timer" class="mono">00:00</b>
+            </span>
+          </div>
+        </div>
+
+        <div class="console-stage">
+          <div id="officer-card" class="officer">
+            <div class="officer-avatar">
+              <svg viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+                <circle cx="22" cy="22" r="20.5" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".5"/>
+                <circle cx="22" cy="16.5" r="6.2" fill="currentColor" opacity=".85"/>
+                <path d="M9.5 35.5 c2.6-6.4 8-9.4 12.5-9.4 s9.9 3 12.5 9.4" fill="currentColor" opacity=".85"/>
+              </svg>
+              <span class="speak-rings" aria-hidden="true"><i></i><i></i></span>
+            </div>
+            <div class="officer-meta">
+              <strong>Officer Parker</strong>
+              <span id="officer-sub">U.S. consular officer &middot; non-immigrant visas</span>
+            </div>
+            <div class="vu" id="vu" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+
+          <div id="barge-cue" class="barge-cue" hidden>Interrupted &mdash; officer stopped talking</div>
+        </div>
+
+        <div id="transcript" class="transcript" aria-live="polite" aria-label="Interview transcript"></div>
+
+        <div class="console-foot">
+          <button id="btn-end" class="btn btn-danger" type="button" disabled>End interview</button>
+          <button id="btn-skip" class="btn btn-ghost btn-sm" type="button" hidden>Skip to report</button>
+          <div id="status-session" class="status js-status console-status"></div>
+          <button id="btn-exit" class="btn btn-quiet btn-sm" type="button">Back</button>
+        </div>
+      </div>
+
+      <!-- scoring skeleton -->
+      <div id="scoring" class="scoring" hidden>
+        <div class="scoring-head">
+          <span class="spinner" aria-hidden="true"></span>
+          <div>
+            <strong>Scoring your interview</strong>
+            <p id="scoring-step">Reading the transcript&hellip;</p>
+          </div>
+        </div>
+        <div class="skel-ring"></div>
+        <div class="skel-rows">
+          <span class="skel"></span><span class="skel"></span><span class="skel"></span>
+          <span class="skel"></span><span class="skel"></span>
+        </div>
+      </div>
+
+      <section id="report" class="report" hidden></section>
+
+      <div id="report-foot" class="report-foot" hidden>
+        <button id="btn-restart" class="btn btn-primary" type="button">Practice again</button>
+        <button id="btn-exit-2" class="btn btn-quiet" type="button">Back to start</button>
+      </div>
+    </section>
+
   </main>
+
+  <footer>
+    <div class="footer-inner">
+      <p>
+        Built on the <a href="https://www.assemblyai.com/" rel="noopener">AssemblyAI Voice Agent API</a>
+        &mdash; streaming speech-to-text, turn detection, barge-in and text-to-speech over a single
+        WebSocket &mdash; with the LLM Gateway cross-examining the finished transcript against the
+        filed form.
+      </p>
+      <p class="fine">Practice tool only. Not legal advice, and not affiliated with the U.S. Department of State.</p>
+    </div>
+  </footer>
+
   <script type="module" src="./app.js"></script>
 </body>
 </html>

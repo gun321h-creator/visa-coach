@@ -1,0 +1,23 @@
+# Files that must never reach the deployment bundle.
+# NOTE: do NOT add lib/ here — api/token.js and api/report.js import lib/guard.js.
+
+# Local-dev-only server (Vercel serves public/ + api/ itself)
+server.js
+
+# Dev tooling and docs
+scripts/
+docs/
+.github/
+README.md
+LICENSE
+
+# Secrets / local state (env vars live in the Vercel project settings)
+.env
+.env.local
+.env.example
+
+# Junk
+node_modules/
+*.log
+.DS_Store
+.vercel/
