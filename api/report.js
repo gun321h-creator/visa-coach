@@ -27,15 +27,73 @@ const FORM_DIMENSION = 'form_consistency';
 // Mirrors FORM_FIELDS in public/persona.js. Duplicated deliberately: api/ is a
 // serverless bundle and public/ is a static asset directory, so we do not want a
 // build-time import hop across that boundary. Keep the keys/labels in sync.
+// `topic` is the vocabulary a spoken answer about this field would plausibly
+// use. It exists because the single most common failure of a small model here
+// is pairing a filed value with an answer to a DIFFERENT question — the
+// applicant never mentioned the filed fact, and silence got read as divergence.
+// The prompt forbids that, but a prompt is not a guard: the same transcript
+// produced the error on one run and not the next. See topicMatches().
 const FORM_FIELD_META = [
-  { key: 'purpose', label: 'Purpose of travel' },
-  { key: 'occupation', label: 'Current occupation / employer' },
-  { key: 'trip_length', label: 'Intended length of stay' },
-  { key: 'who_pays', label: 'Who is paying for this trip?' },
-  { key: 'us_relatives', label: 'Relatives or friends in the United States' },
-  { key: 'prior_travel', label: 'Previous international travel (last 10 years)' },
-  { key: 'return_plan', label: 'Date you intend to return home, and why' },
-  { key: 'home_ties', label: 'Ties to your home country (job, family, property, studies)' },
+  {
+    key: 'purpose',
+    label: 'Purpose of travel',
+    topic: ['purpose', 'trip', 'visit', 'visiting', 'travel', 'travelling', 'traveling', 'going', 'reason',
+      'why', 'tourism', 'tourist', 'holiday', 'vacation', 'conference', 'business', 'wedding', 'graduation',
+      'ceremony', 'see', 'seeing', 'attend', 'attending'],
+  },
+  {
+    key: 'occupation',
+    label: 'Current occupation / employer',
+    topic: ['work', 'works', 'working', 'job', 'occupation', 'employer', 'employed', 'employ', 'company',
+      'firm', 'profession', 'professional', 'career', 'position', 'role', 'retired', 'retire', 'student',
+      'studying', 'business', 'salary', 'income', 'earn', 'hospital', 'office', 'nurse', 'engineer', 'teacher',
+      'ward', 'shift', 'rota', 'contract', 'staff'],
+  },
+  {
+    key: 'trip_length',
+    label: 'Intended length of stay',
+    topic: ['long', 'length', 'stay', 'staying', 'stays', 'week', 'weeks', 'day', 'days', 'month', 'months',
+      'night', 'nights', 'year', 'duration', 'how'],
+  },
+  {
+    key: 'who_pays',
+    label: 'Who is paying for this trip?',
+    topic: ['pay', 'pays', 'paying', 'paid', 'payer', 'cover', 'covers', 'covering', 'covered', 'fund',
+      'funds', 'funding', 'funded', 'sponsor', 'sponsors', 'sponsoring', 'cost', 'costs', 'expense',
+      'expenses', 'money', 'savings', 'afford', 'ticket', 'tickets', 'allowance', 'bill', 'bills', 'finance',
+      'financed', 'financing', 'budget', 'support', 'supporting'],
+  },
+  {
+    key: 'us_relatives',
+    label: 'Relatives or friends in the United States',
+    topic: ['relative', 'relatives', 'family', 'friend', 'friends', 'sister', 'brother', 'sibling', 'son',
+      'daughter', 'mother', 'father', 'parent', 'parents', 'aunt', 'uncle', 'cousin', 'husband', 'wife',
+      'spouse', 'anyone', 'anybody', 'know', 'knows', 'american', 'citizen', 'green', 'card'],
+  },
+  {
+    key: 'prior_travel',
+    label: 'Previous international travel (last 10 years)',
+    topic: ['travel', 'travelled', 'traveled', 'travelling', 'traveling', 'been', 'visited', 'abroad',
+      'overseas', 'previous', 'previously', 'before', 'country', 'countries', 'passport', 'stamp', 'stamps',
+      'visa', 'visas', 'trip', 'trips', 'flight', 'flights', 'japan', 'korea', 'china', 'europe', 'australia',
+      'singapore', 'canada', 'schengen'],
+  },
+  {
+    key: 'return_plan',
+    label: 'Date you intend to return home, and why',
+    topic: ['return', 'returns', 'returning', 'returned', 'back', 'come', 'coming', 'go', 'leave', 'leaving',
+      'depart', 'departing', 'departure', 'fly', 'flying', 'flight', 'date', 'when', 'november', 'december',
+      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october',
+      'rota', 'shift', 'semester', 'term', 'resume', 'restart'],
+  },
+  {
+    key: 'home_ties',
+    label: 'Ties to your home country (job, family, property, studies)',
+    topic: ['tie', 'ties', 'keep', 'keeps', 'keeping', 'hold', 'holds', 'home', 'country', 'thailand', 'job',
+      'work', 'employment', 'family', 'property', 'house', 'apartment', 'condo', 'land', 'mortgage', 'studies',
+      'study', 'studying', 'school', 'university', 'degree', 'contract', 'mother', 'father', 'parents',
+      'care', 'carer', 'obligation', 'responsibility', 'return', 'back'],
+  },
 ];
 
 const HONESTY_NOTE =
@@ -311,6 +369,53 @@ function matchFormKey(raw) {
  * `filed` is re-derived from OUR sanitized copy of the form whenever the field
  * resolves to a known key, so the model cannot smuggle text into that slot.
  */
+const WORDS_RE = /[a-z0-9']+/g;
+const words = (s) => String(s ?? '').toLowerCase().match(WORDS_RE) || [];
+
+/**
+ * Does this quote plausibly concern this form field at all?
+ *
+ * A contradiction requires the applicant to have made a claim about the SAME
+ * fact they filed. The failure we actually saw in production was a filed return
+ * date paired with "My job, of course. And my family, they're all there." — a
+ * real quote, answering a different question, about which the applicant had said
+ * nothing that could contradict anything.
+ *
+ * Two chances to match, because a contradiction is by nature worded differently
+ * from the filed value and so cannot be caught by comparing the two directly:
+ *   1. the quoted answer uses the field's own vocabulary, or
+ *   2. the officer's question immediately before it does — our own persona is
+ *      told to interrogate the form, so its questions carry the field's words.
+ * Failing closed drops a genuine divergence now and then; showing a fabricated
+ * one discredits the only claim this product makes, so that is the right trade.
+ */
+function topicMatches(fieldKey, said, transcript) {
+  const meta = FORM_FIELD_META.find((f) => f.key === fieldKey);
+  if (!meta || !Array.isArray(meta.topic) || meta.topic.length === 0) return true;
+  const topic = new Set(meta.topic);
+
+  const turns = Array.isArray(transcript) ? transcript : [];
+  const saidNorm = norm(said);
+  const probe = saidNorm.slice(0, 60);
+
+  let context = String(said ?? '');
+  if (probe) {
+    const idx = turns.findIndex(
+      (t) => t && t.role === 'user' && norm(t.text).includes(probe),
+    );
+    if (idx > 0) {
+      // Nearest preceding officer turn — the question this answered.
+      for (let i = idx - 1; i >= 0; i -= 1) {
+        if (turns[i] && turns[i].role === 'agent') {
+          context = `${turns[i].text} ${said}`;
+          break;
+        }
+      }
+    }
+  }
+  return words(context).some((w) => topic.has(w));
+}
+
 function normalizeContradictions(raw, cleanForm, hasForm, transcript) {
   if (!hasForm || !Array.isArray(raw)) return [];
 
@@ -349,6 +454,11 @@ function normalizeContradictions(raw, cleanForm, hasForm, transcript) {
     if (saidNorm.length >= 12 && applicantSaid && !applicantSaid.includes(saidNorm.slice(0, 60))) {
       continue;
     }
+
+    // Subject match. The quote has to be about the thing that was filed —
+    // otherwise the applicant merely never mentioned it, and omission is not
+    // divergence. Only enforceable for a recognised form key.
+    if (key && !topicMatches(key, said, transcript)) continue;
 
     seen.add(dedupe);
     out.push({
