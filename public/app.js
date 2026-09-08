@@ -752,7 +752,20 @@ async function end() {
       headers: { 'Content-Type': 'application/json', 'X-OP-Client': '1' },
       body: JSON.stringify({ transcript, form: filedForm }),
     });
-    if (!r.ok) throw new Error(`report endpoint returned ${r.status}`);
+    if (!r.ok) {
+      // The server writes wording the user can act on — a 503 means the free-tier
+      // gateway is throttled and the answer is "wait a minute and press End
+      // interview again", which a bare status code does not tell anyone. It is
+      // our own text, never upstream text; the API is careful about that.
+      let detail = '';
+      try {
+        const body = await r.json();
+        if (body && typeof body.error === 'string') detail = body.error;
+      } catch {
+        /* not JSON — fall back to the status code */
+      }
+      throw new Error(detail || `report endpoint returned ${r.status}`);
+    }
     const rep = await r.json();
     stopSteps();
     // The user pressed Back while the report was in flight — do not paint a stale

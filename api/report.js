@@ -96,6 +96,36 @@ const FORM_FIELD_META = [
   },
 ];
 
+// Backoff before the single retry of a rate-limited gateway call. Long enough
+// for AssemblyAI's free-tier throttle to clear between takes, short enough that
+// the user does not think the app has hung.
+const GATEWAY_RETRY_MS = 1500;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A loggable summary of an upstream error body.
+ *
+ * Function logs are retained, and a gateway auth failure commonly echoes the
+ * credential that was presented — so the raw body must never be written down,
+ * even server-side. Keep the two fields that are actually useful for debugging
+ * and describe the rest by shape only.
+ */
+function upstreamSummary(body) {
+  const s = String(body ?? '');
+  let message = '';
+  let code = '';
+  try {
+    const j = JSON.parse(s);
+    if (j && typeof j === 'object') {
+      message = String(j.message ?? j.error ?? '').slice(0, 120);
+      code = String(j.code ?? '').slice(0, 20);
+    }
+  } catch {
+    /* not JSON — describe by shape only */
+  }
+  return `len=${s.length}${code ? ` code=${code}` : ''}${message ? ` message=${JSON.stringify(message)}` : ''}`;
+}
+
 const HONESTY_NOTE =
   'Rewrites only reorganise what you actually said — they never add facts. Never say anything untrue at the window.';
 
@@ -573,6 +603,17 @@ export default async function handler(req, res) {
         if (r.ok) { usedModel = model; break; }
         lastBody = await r.text();
       }
+
+      // Upstream rate limit. The free tier throttles the gateway, and it bites
+      // exactly when someone is filming several takes in a row — i.e. at the
+      // one moment the report matters most. One short backoff is worth the
+      // added latency; a second would not be.
+      if (r.status === 429) {
+        await sleep(GATEWAY_RETRY_MS);
+        r = await post({ ...base, response_format: { type: 'json_object' } });
+        if (r.ok) { usedModel = model; jsonModeOk = true; break; }
+        lastBody = await r.text();
+      }
       // Any other failure of the preferred model is worth one shot on the
       // free-tier fallback (access errors come back as unstructured prose).
     }
@@ -580,7 +621,16 @@ export default async function handler(req, res) {
     if (!r || !r.ok) {
       // Never proxy the upstream body: a gateway auth failure commonly echoes
       // the credential that was presented. Keep it in the server log only.
-      console.error(`[report] LLM gateway failed (${r ? r.status : 'no response'}); upstream body:`, lastBody.slice(0, 1000));
+      console.error(
+        `[report] LLM gateway failed (${r ? r.status : 'no response'}); upstream ${upstreamSummary(lastBody)}`,
+      );
+      // Distinguish "throttled, try again shortly" from "broken". Still no
+      // upstream text — only our own wording, chosen from the status code.
+      if (r && r.status === 429) {
+        return res.status(503).json({
+          error: 'the scoring service is rate-limited right now — wait about a minute and press End interview again',
+        });
+      }
       return res.status(502).json({ error: 'the scoring service is unavailable right now — please try again' });
     }
 
