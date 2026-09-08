@@ -6,7 +6,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "node --env-file=.env server.js",
-    "smoke": "node --env-file=.env scripts/smoke.mjs"
+    "smoke": "node --env-file=.env scripts/smoke.mjs",
+    "guards": "node scripts/test_contradiction_guards.mjs",
+    "test": "node scripts/test_contradiction_guards.mjs && node --env-file=.env scripts/smoke.mjs"
   },
   "engines": {
     "node": "22.x"

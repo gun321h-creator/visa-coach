@@ -225,6 +225,9 @@ Fill "contradictions" with every place the spoken answer diverges from the filed
 - "filed" must quote the filed value.
 - "said" must quote the applicant's ACTUAL words from the transcript. Do not paraphrase and do not invent a quote. If you cannot point at real words they said, it is not a contradiction — leave it out.
 - "why_it_matters" is one short sentence on why an officer would refuse over it.
+- The words you quote in "said" must make a claim about the SAME fact as the filed field. Answering a different question is not a contradiction.
+- SILENCE IS NOT A CONTRADICTION. If the applicant simply never mentioned what they filed, there is nothing to contradict — do not pair the filed value with some unrelated thing they happened to say. That is the most common mistake here.
+- At most ONE entry per field. If a field was discussed several times, pick the single clearest divergence.
 If nothing genuinely diverges, return an empty array. Do not manufacture a contradiction to look thorough. A vague answer is not a contradiction; it is a low score on another dimension.`
     : `
 No form was filed for this session. Return "contradictions" as an empty array and do not invent any filed answers or form fields.`;
@@ -308,8 +311,20 @@ function matchFormKey(raw) {
  * `filed` is re-derived from OUR sanitized copy of the form whenever the field
  * resolves to a known key, so the model cannot smuggle text into that slot.
  */
-function normalizeContradictions(raw, cleanForm, hasForm) {
+function normalizeContradictions(raw, cleanForm, hasForm, transcript) {
   if (!hasForm || !Array.isArray(raw)) return [];
+
+  // The contradictions panel is the one thing on the report a judge or an
+  // applicant will actually check, so every quote in it has to be traceable
+  // to words the applicant really said. The prompt forbids invented quotes;
+  // this is the backstop for when a small model does it anyway.
+  const applicantSaid = norm(
+    (Array.isArray(transcript) ? transcript : [])
+      .filter((t) => t && typeof t === 'object' && t.role === 'user')
+      .map((t) => String(t.text ?? ''))
+      .join(' '),
+  );
+
   const out = [];
   const seen = new Set();
   for (const c of raw.slice(0, MAX_CONTRADICTIONS)) {
@@ -319,8 +334,22 @@ function normalizeContradictions(raw, cleanForm, hasForm) {
     const filed = key && cleanForm[key] ? cleanForm[key] : safeText(c.filed, 400);
     // No quoted evidence on either side = no contradiction we are willing to show.
     if (!said || !filed) continue;
-    const dedupe = `${key || norm(c.field)}|${norm(said)}`;
-    if (seen.has(dedupe)) continue;
+
+    // At most one contradiction per filed field. A model that returns the same
+    // field twice with two different quotes is padding the list, not finding a
+    // second divergence — and the count above the report is derived from this
+    // array, so the padding would inflate the headline too.
+    const dedupe = key || norm(c.field);
+    if (!dedupe || seen.has(dedupe)) continue;
+
+    // Quote provenance. Compare on the normalised forms so punctuation,
+    // casing and the safeText ellipsis do not matter. Very short quotes are
+    // exempt: they collide by accident rather than prove anything.
+    const saidNorm = norm(said);
+    if (saidNorm.length >= 12 && applicantSaid && !applicantSaid.includes(saidNorm.slice(0, 60))) {
+      continue;
+    }
+
     seen.add(dedupe);
     out.push({
       field: key || safeText(c.field, 60) || 'form',
@@ -499,21 +528,21 @@ export default async function handler(req, res) {
       ? Math.round((scoredDims.reduce((a, d) => a + scores[d], 0) / scoredDims.length) * 10) / 10
       : null;
 
-    const contradictions = normalizeContradictions(report.contradictions, cleanForm, hasForm);
+    const contradictions = normalizeContradictions(report.contradictions, cleanForm, hasForm, transcript);
 
-    // Count of distinct refusal reasons. Prefer the model's own count, but it can
-    // never be lower than the number of contradictions we are actually showing.
-    // If the model omitted it, fall back to something derived from our own
-    // scoring rather than from thin air.
-    // Only real scores count as weak — `null <= 4` is true in JS and would
-    // otherwise turn every omitted dimension into an invented refusal reason.
-    const weakDims = scoredDims.filter((d) => scores[d] <= 4).length;
-    const modelCount = Number(report.refusal_reasons_found);
-    let refusalReasons = Number.isFinite(modelCount)
-      ? Math.round(modelCount)
-      : contradictions.length + weakDims;
-    refusalReasons = Math.max(0, Math.min(10, refusalReasons));
-    refusalReasons = Math.max(refusalReasons, contradictions.length);
+    // This number leads the whole report, so every unit of it has to point at
+    // something visible further down the page: a contradiction card, or a bar
+    // that scored a clear fail. The model's own `refusal_reasons_found` is
+    // deliberately ignored — it counted three on a transcript that contained
+    // one real divergence, and an unbacked headline is exactly the kind of
+    // false confidence this product must not sell.
+    //
+    // form_consistency is excluded because it is already represented by the
+    // contradiction cards; counting both double-counts the same problem.
+    // Only real scores count — `null <= 3` is true in JS, so an omitted
+    // dimension would otherwise manufacture a refusal reason out of nothing.
+    const failingDims = scoredDims.filter((d) => d !== FORM_DIMENSION && scores[d] <= 3).length;
+    const refusalReasons = Math.max(0, Math.min(10, contradictions.length + failingDims));
 
     const fillers = countFillers(transcript);
 
