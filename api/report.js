@@ -96,9 +96,15 @@ const FORM_FIELD_META = [
   },
 ];
 
-// Backoff before the single retry of a rate-limited gateway call. Long enough
-// for AssemblyAI's free-tier throttle to clear between takes, short enough that
-// the user does not think the app has hung.
+// Backoff before the single retry of a rate-limited gateway call.
+//
+// Measured against the live gateway on 2026-09-08: the free tier allows ~2
+// calls, then 429s for ~62s. So this retry does NOT rescue a free-tier
+// throttle, and it is not meant to — a Vercel function capped at 30s cannot
+// wait a 62s window out. It rescues the transient case (a burst that clears
+// immediately, or a paid account with a short window). The free-tier rescue is
+// the client cooldown in public/app.js, which is why the 503 wording below
+// says a minute rather than a moment.
 const GATEWAY_RETRY_MS = 1500;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -291,6 +291,14 @@ function collectForm() {
 
 function openIntake(intent) {
   cancelDemo();
+  // A cooldown left running here would keep repainting the landing/intake status
+  // line from a session the user has already left: setStatus writes to every
+  // .js-status element, not just the session one. The throttle path un-hides
+  // #report-foot, and its "Practice again" button comes straight to this view.
+  cancelCooldown();
+  // The countdown may have been cancelled mid-lock, or expired on another view.
+  // Either way End must start a session disabled — there is nothing to score yet.
+  els.end.disabled = true;
   navEpoch += 1;
   intakeIntent = intent;
 
@@ -498,6 +506,7 @@ async function teardown() {
 }
 
 function resetSessionUI() {
+  cancelCooldown();
   transcript.length = 0;
   clearPartial();
   els.transcript.replaceChildren();
@@ -729,6 +738,43 @@ function startMic() {
   source.connect(workletNode);
 }
 
+/* ── free-tier throttle cooldown ───────────────────────────────────────────
+ * Measured against the live gateway on 2026-09-08: a rested free-tier account
+ * gets 2 scoring calls, then 429s for ~62s. So "press End again" immediately
+ * cannot work, and each impatient press re-arms the window — the failure mode
+ * is a demo that looks broken to whoever is watching. The server already says
+ * to wait a minute; this makes the wait visible and enforces it, because a
+ * serverless function capped at 30s cannot wait the window out on its own.
+ */
+const THROTTLE_COOLDOWN_S = 65;
+let cooldownTimer = null;
+
+function cancelCooldown() {
+  if (cooldownTimer === null) return;
+  clearInterval(cooldownTimer);
+  cooldownTimer = null;
+}
+
+function startCooldown(message) {
+  cancelCooldown();
+  // Deadline, not a counter: Chrome clamps timers in a background tab, and a
+  // decrement-per-tick would leave the lock running long past the real window.
+  const until = Date.now() + THROTTLE_COOLDOWN_S * 1000;
+  els.end.disabled = true;
+  const paint = () => {
+    const left = Math.ceil((until - Date.now()) / 1000);
+    if (left > 0) {
+      setStatus(`${message} Ready to retry in ${left}s.`, 'err');
+      return;
+    }
+    cancelCooldown();
+    els.end.disabled = false;
+    setStatus('Ready — press End interview to score this transcript again.');
+  };
+  paint();
+  cooldownTimer = setInterval(paint, 250);
+}
+
 async function end() {
   const epoch = navEpoch;
   els.end.disabled = true;
@@ -764,7 +810,10 @@ async function end() {
       } catch {
         /* not JSON — fall back to the status code */
       }
-      throw new Error(detail || `report endpoint returned ${r.status}`);
+      const err = new Error(detail || `report endpoint returned ${r.status}`);
+      // 503 is our own "throttled, wait" signal, not a generic failure.
+      err.throttled = r.status === 503;
+      throw err;
     }
     const rep = await r.json();
     stopSteps();
@@ -778,11 +827,15 @@ async function end() {
     stopSteps();
     if (epoch !== navEpoch) return;
     endScoring();
-    setStatus(`Report generation failed: ${e.message}`, 'err');
-    // The transcript is still in memory, and a 503 tells the user to wait and
-    // press End interview again — so the button that does that has to come
-    // back. Without this the only affordance left restarts and discards it.
-    els.end.disabled = false;
+    // The transcript is still in memory either way, so the button that scores it
+    // has to come back. When the gateway throttled us, it comes back on a timer
+    // instead of instantly: pressing it early is guaranteed to fail again.
+    if (e.throttled) {
+      startCooldown('The scoring service is rate-limited.');
+    } else {
+      setStatus(`Report generation failed: ${e.message}`, 'err');
+      els.end.disabled = false;
+    }
     els.reportFoot.hidden = false;
   } finally {
     els.start.disabled = false;
